@@ -1,0 +1,79 @@
+Ethernet2.hには
+"WIZ550io_WITH_MACADDRESS"というオプションが設定できるが機能していない。
+このオプションはWiz550ioのみに効果がありMACアドレスの自動設定を利用できるというものだが、
+古いEthernet2.hでのみ使用可能でver1.0.4以降使えなくなった。
+この原因はw5500.cppでbegin中にソフトウェアリセットをかけるようになったことである。
+ソフトウェアリセットにはMACアドレスを全て0にする効果があり、この段階で工場出荷時のアドレスが消える。
+工場出荷時のアドレスは電源を入れた最初の段階でしか読み出せない。
+
+この解決策としてbegin内でソフトウェアリセットをしないという選択肢があるが、
+begin内でソフトウェアリセットをかけないとW5500とArduino間の状態に不整合が生じる。
+W5500がリセットされないまま2回のbeginを実行すると、UDPパケットが受信できないという異常が生じる。
+これはArduinoだけが何らかの原因でリセットされた場合に発生する。
+
+特に発生しやすいのはW5500とArduinoのリセットピンをArduinoのどこかの端子に接続し、自己リセットをかける場合である。
+この場合、Arduinoのリセットが先にかかりW5500のリセットが間に合わず、そのままArduinoが再起動する。
+再起動したArduinoはW5500に対して2回目の初期化処理を重複して実行してしまうので異常をきたす。
+
+Wiz550ioの内蔵MACアドレスとソフトウェアリセットを両立するには、
+(1)SPI初期化
+(2)先に内蔵MACアドレスを読み出し
+(3)ソフトウェアリセットをかける
+(4)MACアドレスを書き戻す
+(5)初期化処理を行う
+
+という手順が必要である。
+
+ところがここでデバッグ中にもう一つの問題を発見した。
+Wiz550ioはSPI初期化直後の応答が安定しない。
+最初に実行する内蔵MACアドレスを読み出しは20%程度失敗する。
+このときエラーも出ない。
+このままだと間違ったMACアドレスを設定してしまう危険性があるので、
+対策として、以下の方法をとった。
+
+最初に内蔵MACアドレスの読み出しを2回行い、同じ値が返ってくるかチェックする。
+一致しない場合はタイムアウトまでこの処理を繰り返す。
+
+観察した結果、内蔵MACアドレスの読み出しに失敗するのは最初の1回だけで2回目以降の応答は安定しているようだ。
+したがって、最初がダメでもリトライを繰り返せば正しい値が得られると考えられる。
+
+
+Ethernet2.h has an option
+WIZ550io_WITH_MACADDRESS” option, but it does not work.
+This option is effective only for Wiz550io, which can use automatic MAC address configuration,
+However, it is only available in the old Ethernet2.h and has been disabled since ver1.0.4.
+The reason for this is that w5500.cpp now performs a software reset during begin.
+The software reset has the effect of setting all MAC addresses to 0, and the factory address disappears at this stage.
+The factory address can only be read at the first stage of power-on.
+
+The solution to this is to not do a software reset in begin, though,
+However, if a software reset is not performed in begin, there will be inconsistencies between the W5500 and the Arduino.
+If the W5500 is not reset and two begin cycles are performed, an anomaly will occur where UDP packets cannot be received.
+This occurs when only the Arduino is reset for some reason.
+
+This is especially likely to occur when the reset pins of the W5500 and Arduino are connected to some pin of the Arduino and self-reset.
+In this case, the Arduino will reset first, the W5500 will not reset in time, and the Arduino will restart as it is.
+The restarted Arduino will duplicate the second initialization process for the W5500, causing an error.
+
+How to combine the Wiz550io's built-in MAC address and software reset,
+(1) SPI initialization
+(2) Read the built-in MAC address first
+(3)Apply software reset
+(4) Write back the MAC address
+(5) Perform initialization process
+
+The following steps are necessary.
+
+However, we found another problem while debugging.
+Wiz550io's response immediately after SPI initialization is not stable.
+The first read of the built-in MAC address fails about 20% of the time.
+At this time, there is no error.
+If this is not done, there is a risk of setting a wrong MAC address,
+As a countermeasure, the following method was taken.
+
+First, read the built-in MAC address twice and check if the same value is returned.
+If no match is found, this process is repeated until timeout.
+
+As a result of our observation, it seems that only the first attempt to read the built-in MAC address fails, and the response is stable from the second attempt onward.
+Therefore, even if the first attempt fails, the correct value can be obtained by repeating the retry.
+
